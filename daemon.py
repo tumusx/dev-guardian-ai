@@ -182,9 +182,9 @@ def fix_project(proj_name: str) -> bool:
     try:
         project_path = Path(proj_config["path"])
 
-        # Lê regras de correção (PRIORIDADE MÁXIMA)
+        # Lê regras de correção globais (PRIORIDADE MÁXIMA)
         fix_rules = ""
-        rules_path = project_path / "FIX_RULES.md"
+        rules_path = DEVGUARDIAN_DIR / "FIX_RULES.md"
         if rules_path.exists():
             fix_rules = rules_path.read_text()
 
