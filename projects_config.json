@@ -1,0 +1,13 @@
+{
+  "projects": [
+    {
+      "name": "http-cat-app",
+      "path": "/Users/murilloalvesdasilva/Projects/personal/http-cat-app",
+      "type": "android",
+      "build_cmd": "./gradlew build",
+      "active": true
+    }
+  ],
+  "monitor_interval": 30,
+  "auto_fix_enabled": true
+}
