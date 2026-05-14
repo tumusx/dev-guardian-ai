@@ -183,9 +183,9 @@ def fix_project(proj_name: str) -> bool:
         if rules_path.exists():
             fix_rules = rules_path.read_text()
 
-        # Lê guia de codebase se existir
+        # Lê guia de codebase do DevGuardian se existir
         codebase_guide = ""
-        guide_path = project_path / "CODEBASE_GUIDE.md"
+        guide_path = DEVGUARDIAN_DIR / "project-guides" / proj_name / "GUIDE.md"
         if guide_path.exists():
             codebase_guide = guide_path.read_text()
 
