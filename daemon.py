@@ -181,34 +181,70 @@ def fix_project(proj_name: str) -> bool:
 
     try:
         project_path = Path(proj_config["path"])
-        kotlin_files = list(project_path.glob("src/**/*.kt"))[:5]
+
+        # Lê regras de correção (PRIORIDADE MÁXIMA)
+        fix_rules = ""
+        rules_path = project_path / "FIX_RULES.md"
+        if rules_path.exists():
+            fix_rules = rules_path.read_text()
+
+        # Lê guia de codebase se existir
+        codebase_guide = ""
+        guide_path = project_path / "CODEBASE_GUIDE.md"
+        if guide_path.exists():
+            codebase_guide = guide_path.read_text()
+
+        kotlin_files = list(project_path.glob("src/**/*.kt"))[:10]
         file_context = {}
 
         for file_path in kotlin_files:
             try:
                 content = file_path.read_text()
-                file_context[str(file_path.relative_to(project_path))] = content[:800]
+                file_path_rel = str(file_path.relative_to(project_path))
+                file_context[file_path_rel] = content
             except:
                 pass
+
+        # Encontra arquivo com erro
+        error_file = None
+        for file_path in file_context.keys():
+            if "MainActivity" in file_path:
+                error_file = file_path
 
         client = state["anthropic_client"]
         response = client.messages.create(
             model="claude-opus-4-7",
-            max_tokens=2000,
+            max_tokens=4000,
             messages=[{
                 "role": "user",
-                "content": f"""Fix this build error (Project: {proj_name}):
+                "content": f"""=== ABSOLUTE RULES - MUST FOLLOW ===
+{fix_rules}
 
-ERROR:
-{proj_state.get('error', '')[:500]}
+=== CODEBASE GUIDE ===
+{codebase_guide}
 
-FILES:
-{str(file_context)[:1000]}
+=== ERROR TO FIX ===
+{proj_state.get('error', '')[:800]}
 
-Return ONLY the fixed file content in this format:
-FILE: path/to/file.kt
+=== FILE WITH ERROR ===
+{error_file}
+
+=== COMPLETE FILE CONTENT ===
 ```kotlin
-[complete fixed code]
+{file_context.get(error_file, '')}
+```
+
+=== YOUR TASK ===
+1. Find the EXACT line causing the error
+2. Change ONLY that line (or minimal surrounding code)
+3. Do NOT add anything new
+4. Do NOT remove anything that works
+5. Return COMPLETE file with ONLY error fixed
+
+=== RETURN FORMAT (STRICT) ===
+FILE: {error_file}
+```kotlin
+[COMPLETE file]
 ```"""
             }]
         )
