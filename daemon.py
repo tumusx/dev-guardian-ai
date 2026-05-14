@@ -1,18 +1,17 @@
 #!/usr/bin/env python3
 """
-DevGuardian Central Daemon
-Monitora TODOS os projetos
-Claude API corrige erros automaticamente
+DevGuardian Central Daemon - Versão Simplificada
+Monitora TODOS os projetos via polling direto
 """
 import os
 import sys
 import json
 import subprocess
 import logging
+import requests
+import time
 from pathlib import Path
 from dotenv import load_dotenv
-from telegram import Update
-from telegram.ext import Application, MessageHandler, filters, ContextTypes
 from anthropic import Anthropic
 
 load_dotenv()
@@ -41,8 +40,7 @@ logger = logging.getLogger(__name__)
 # Estado global
 state = {
     "projects": {},
-    "waiting_for_fix": False,
-    "current_project": None,
+    "last_message_id": 0,
     "anthropic_client": Anthropic(api_key=ANTHROPIC_API_KEY)
 }
 
@@ -55,29 +53,43 @@ def load_projects() -> dict:
     try:
         with open(CONFIG_FILE) as f:
             config = json.load(f)
-
         projects = {}
         for proj in config.get("projects", []):
             if proj.get("active"):
                 projects[proj["name"]] = proj
-
         return projects
     except Exception as e:
         logger.error(f"Failed to load config: {e}")
         return {}
 
-async def send_telegram(message: str):
+def send_telegram(message: str) -> bool:
     """Envia mensagem no Telegram"""
-    import requests
     url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
     data = {"chat_id": TELEGRAM_CHAT_ID, "text": message}
-
     try:
         resp = requests.post(url, json=data, timeout=5)
-        return resp.status_code == 200
+        if resp.status_code == 200:
+            logger.info("✅ Telegram notificado")
+            return True
+        else:
+            logger.error(f"Telegram error: {resp.status_code} - {resp.text}")
+            return False
     except Exception as e:
-        logger.error(f"Telegram error: {e}")
+        logger.error(f"Telegram connection error: {e}")
         return False
+
+def get_telegram_messages() -> list:
+    """Obtém mensagens do Telegram"""
+    url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/getUpdates"
+    params = {"offset": state["last_message_id"] + 1, "timeout": 1}
+    try:
+        resp = requests.get(url, params=params, timeout=5)
+        data = resp.json()
+        if data.get("ok"):
+            return data.get("result", [])
+        return []
+    except:
+        return []
 
 def run_build(project: dict) -> tuple[int, str, str]:
     """Executa build de um projeto"""
@@ -100,17 +112,13 @@ def extract_error(stdout: str, stderr: str) -> str:
     """Extrai erro principal"""
     combined = stdout + stderr
     lines = combined.split("\n")
-
     errors = []
     for line in lines:
         if any(x in line.lower() for x in ["error:", "failed", "exception"]):
             errors.append(line.strip())
+    return "\n".join(errors[:3]) if errors else "Build failed"
 
-    if errors:
-        return "\n".join(errors[:3])
-    return "Build failed"
-
-async def check_builds():
+def check_builds():
     """Monitora todos os projetos"""
     projects = load_projects()
     if not projects:
@@ -124,13 +132,18 @@ async def check_builds():
         if returncode != 0:
             error_msg = extract_error(stdout, stderr)
 
-            if proj_name not in state["projects"] or state["projects"][proj_name]["status"] != "failed":
-                state["projects"][proj_name] = {
-                    "status": "failed",
-                    "error": error_msg,
-                    "config": proj_config
-                }
+            # Só notifica se erro é diferente do anterior
+            old_state = state["projects"].get(proj_name, {})
+            old_error = old_state.get("error", "")
 
+            state["projects"][proj_name] = {
+                "status": "failed",
+                "error": error_msg,
+                "config": proj_config
+            }
+
+            # Se erro é novo/diferente, notifica
+            if error_msg != old_error:
                 msg = f"""
 🚨 BUILD FAILED: {proj_name}
 
@@ -139,29 +152,32 @@ async def check_builds():
 Responda: fix {proj_name}
 Para corrigir via Claude
 """
-                logger.error(f"{proj_name} build failed:\n{error_msg}")
-                await send_telegram(msg)
+                logger.error(f"{proj_name} build failed - novo erro, enviando Telegram...")
+                success = send_telegram(msg)
+                if success:
+                    logger.info(f"✅ Notificação enviada para {proj_name}")
+                else:
+                    logger.error(f"❌ Falha ao enviar notificação para {proj_name}")
         else:
             if proj_name in state["projects"] and state["projects"][proj_name]["status"] == "failed":
-                await send_telegram(f"✅ {proj_name}: Build recuperado!")
-
+                send_telegram(f"✅ {proj_name}: Build recuperado!")
             state["projects"][proj_name] = {"status": "success"}
 
-async def fix_project(proj_name: str) -> bool:
-    """Corrige erro de um projeto via Claude"""
+def fix_project(proj_name: str) -> bool:
+    """Corrige erro de um projeto"""
     if proj_name not in state["projects"]:
-        await send_telegram(f"❌ Projeto {proj_name} não encontrado")
+        send_telegram(f"❌ Projeto {proj_name} não encontrado")
         return False
 
     proj_state = state["projects"][proj_name]
     proj_config = proj_state.get("config")
 
     if not proj_config:
-        await send_telegram(f"❌ Config do projeto {proj_name} não encontrada")
+        send_telegram(f"❌ Config do projeto {proj_name} não encontrada")
         return False
 
     logger.info(f"🤖 Fixing {proj_name}...")
-    await send_telegram(f"⏳ {proj_name}: Corrigindo... (analisando)")
+    send_telegram(f"⏳ {proj_name}: Corrigindo... (analisando)")
 
     try:
         project_path = Path(proj_config["path"])
@@ -175,7 +191,6 @@ async def fix_project(proj_name: str) -> bool:
             except:
                 pass
 
-        # Chama Claude
         client = state["anthropic_client"]
         response = client.messages.create(
             model="claude-opus-4-7",
@@ -200,21 +215,21 @@ FILE: path/to/file.kt
 
         fixes_text = response.content[0].text
 
-        await send_telegram(f"⏳ {proj_name}: Corrigindo... (aplicando mudanças)")
+        send_telegram(f"⏳ {proj_name}: Corrigindo... (aplicando mudanças)")
         apply_fixes(fixes_text, project_path)
 
-        await send_telegram(f"⏳ {proj_name}: Corrigindo... (testando build)")
+        send_telegram(f"⏳ {proj_name}: Corrigindo... (testando build)")
         returncode, stdout, stderr = run_build(proj_config)
 
         if returncode == 0:
-            await send_telegram(f"✅ {proj_name}: Corrigido e subido no GitHub!")
+            send_telegram(f"✅ {proj_name}: Corrigido e subido no GitHub!")
             commit_and_push(project_path)
             state["projects"][proj_name]["status"] = "success"
             return True
         else:
             new_error = extract_error(stdout, stderr)
             state["projects"][proj_name]["error"] = new_error
-            await send_telegram(f"""
+            send_telegram(f"""
 ❌ {proj_name}: Erro ao corrigir
 
 {new_error[:300]}
@@ -226,7 +241,7 @@ Responda novamente: fix {proj_name}
     except Exception as e:
         error_msg = f"Erro ao comunicar com servidor Claude: {str(e)[:100]}"
         logger.error(error_msg)
-        await send_telegram(f"❌ {proj_name}: {error_msg}")
+        send_telegram(f"❌ {proj_name}: {error_msg}")
         return False
 
 def apply_fixes(fixes_text: str, project_path: Path):
@@ -270,39 +285,6 @@ def commit_and_push(project_path: Path):
     except subprocess.CalledProcessError as e:
         logger.error(f"Git error: {e}")
 
-async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Processa mensagens do Telegram"""
-    if update.message.chat_id != TELEGRAM_CHAT_ID:
-        return
-
-    text = update.message.text.lower().strip()
-
-    if text.startswith("fix "):
-        proj_name = text.replace("fix ", "").strip()
-        await fix_project(proj_name)
-    elif text == "status":
-        projects = load_projects()
-        msg = "📊 Status dos projetos:\n\n"
-        for proj_name in projects.keys():
-            status = state.get("projects", {}).get(proj_name, {}).get("status", "unknown")
-            emoji = "✅" if status == "success" else "❌" if status == "failed" else "❓"
-            msg += f"{emoji} {proj_name}: {status}\n"
-        await send_telegram(msg)
-    elif text == "help":
-        msg = """
-🤖 DevGuardian Daemon
-
-Comandos:
-• fix <projeto> - Corrigir erro
-• status - Ver status de todos
-• help - Ver ajuda
-"""
-        await send_telegram(msg)
-
-async def monitor_loop(context: ContextTypes.DEFAULT_TYPE):
-    """Monitora builds periodicamente"""
-    await check_builds()
-
 def main():
     logger.info("🚀 DevGuardian Central Daemon iniciado")
 
@@ -312,23 +294,55 @@ def main():
 
     projects = load_projects()
     if not projects:
-        logger.error("❌ Nenhum projeto configurado em projects_config.json")
+        logger.error("❌ Nenhum projeto configurado")
         sys.exit(1)
 
     logger.info(f"📁 Projetos: {', '.join(projects.keys())}")
 
-    app = Application.builder().token(TELEGRAM_BOT_TOKEN).build()
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, message_handler))
-
-    # Job de monitoramento
     config = json.load(open(CONFIG_FILE))
-    interval = config.get("monitor_interval", 30)
-    app.job_queue.run_repeating(monitor_loop, interval=interval, first=0)
+    monitor_interval = config.get("monitor_interval", 30)
 
-    logger.info(f"⏱️ Monitorando a cada {interval}s")
-    logger.info("🤖 Pronto! Enviando mensagens via Telegram...")
+    logger.info(f"⏱️ Monitorando a cada {monitor_interval}s")
+    logger.info("🤖 Pronto! Aguardando erros...")
 
-    app.run_polling()
+    check_counter = 0
+    while True:
+        try:
+            check_counter += 1
+
+            # Check builds a cada monitor_interval segundos
+            if check_counter >= monitor_interval:
+                logger.info("🔄 Iniciando check de builds...")
+                check_builds()
+                check_counter = 0
+
+            # Verifica mensagens do Telegram
+            messages = get_telegram_messages()
+            for msg in messages:
+                state["last_message_id"] = msg["update_id"]
+                if "message" in msg:
+                    text = msg["message"].get("text", "").lower().strip()
+                    if text.startswith("fix "):
+                        proj_name = text.replace("fix ", "").strip()
+                        fix_project(proj_name)
+                    elif text == "status":
+                        msg_text = "📊 Status:\n"
+                        for pname in projects.keys():
+                            status = state.get("projects", {}).get(pname, {}).get("status", "unknown")
+                            emoji = "✅" if status == "success" else "❌" if status == "failed" else "❓"
+                            msg_text += f"{emoji} {pname}\n"
+                        send_telegram(msg_text)
+
+            time.sleep(1)
+
+        except KeyboardInterrupt:
+            logger.info("Daemon parado")
+            break
+        except Exception as e:
+            logger.error(f"Error: {e}")
+            import traceback
+            traceback.print_exc()
+            time.sleep(5)
 
 if __name__ == "__main__":
     main()

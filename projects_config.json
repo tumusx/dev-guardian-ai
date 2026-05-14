@@ -8,6 +8,6 @@
       "active": true
     }
   ],
-  "monitor_interval": 30,
+  "monitor_interval": 1,
   "auto_fix_enabled": true
 }
