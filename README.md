@@ -1,219 +1,219 @@
 # DevGuardian 🤖
 
-Monitor em **background** para macbook que detecta erros de build/IDE, notifica você no Telegram/Slack, e Claude resolve + faz push no GitHub.
+Background **monitor** for macbook that detects build/IDE errors, notifies you on Telegram/Slack, and Claude resolves + pushes to GitHub.
 
-Roda 24/7 como Launchd Agent (nativo do macOS).
+Runs 24/7 as a Launchd Agent (native macOS).
 
-## Fluxo
+## Flow
 
 ```
-🔄 Launchd rodando em background
+🔄 Launchd running in background
     ↓
-IDE com erro → Monitora logs/files → Screenshot → Telegram/Slack 
-    ↓ (você aprova no celular)
-Passa screenshot pro Claude → Claude resolve
+IDE with error → Monitors logs/files → Screenshot → Telegram/Slack 
+    ↓ (you approve on your phone)
+Passes screenshot to Claude → Claude resolves
     ↓
-Auto-fixer roda testes, build, push
+Auto-fixer runs tests, build, push
 ```
 
-## Setup Completo (10 minutos)
+## Complete Setup (10 minutes)
 
-### 1️⃣ Setup inicial
+### 1️⃣ Initial setup
 
 ```bash
 cd ~/Projects/DevGuardian
 bash setup.sh
 ```
 
-Isso vai:
-- Criar virtual environment
-- Instalar dependências
-- Criar `.env` para você preencher
+This will:
+- Create virtual environment
+- Install dependencies
+- Create `.env` for you to fill in
 
-### 2️⃣ Configurar Telegram Bot
+### 2️⃣ Configure Telegram Bot
 
-1. Abra Telegram e busque por **@BotFather**
-2. Mande `/newbot`
-3. Escolha um nome (ex: "DevGuardianBot")
-4. Copie o **TOKEN**
+1. Open Telegram and search for **@BotFather**
+2. Send `/newbot`
+3. Choose a name (e.g., "DevGuardianBot")
+4. Copy the **TOKEN**
 
-### 3️⃣ Pegar seu Chat ID
+### 3️⃣ Get your Chat ID
 
-1. Busque **@userinfobot** no Telegram
-2. Mande qualquer mensagem
-3. Ele responde seu **ID**
+1. Search for **@userinfobot** on Telegram
+2. Send any message
+3. It responds with your **ID**
 
-### 4️⃣ Configurar `.env`
+### 4️⃣ Configure `.env`
 
 ```bash
 nano .env
 ```
 
-Preencha:
+Fill in:
 ```
-TELEGRAM_BOT_TOKEN=seu_token_aqui
-TELEGRAM_CHAT_ID=seu_id_aqui
+TELEGRAM_BOT_TOKEN=your_token_here
+TELEGRAM_CHAT_ID=your_id_here
 PROJECT_PATH=/path/to/your/project
 MONITOR_INTERVAL=30
 ```
 
-### 5️⃣ Instalar como Launchd Agent (background permanente)
+### 5️⃣ Install as Launchd Agent (permanent background)
 
 ```bash
 bash install_launchd.sh
 ```
 
-✅ Monitor está rodando em background agora! Vai reiniciar sozinho até em reboot.
+✅ Monitor is now running in background! It will restart automatically even after reboot.
 
 ---
 
-## Como Funciona (Background)
+## How It Works (Background)
 
-Monitor rodando sempre:
-- ✅ Verifica logs a cada 30s
-- ✅ Monitora mudanças de arquivos
-- ✅ Checa resultados de testes
-- ✅ Se encontra erro → Screenshota + Telegram
+Monitor running continuously:
+- ✅ Checks logs every 30s
+- ✅ Monitors file changes
+- ✅ Checks test results
+- ✅ If error found → Takes screenshot + Telegram
 
-Você está fora de casa:
-- 📱 Recebe notificação no Telegram
-- 🤖 Abre Claude, cola screenshot
-- 🔧 Claude resolve código
-- 📤 Executa auto-fixer → push automático
+You're away from home:
+- 📱 Get notification on Telegram
+- 🤖 Open Claude, paste screenshot
+- 🔧 Claude resolves the code
+- 📤 Runs auto-fixer → automatic push
 
 ---
 
-## Comandos Úteis
+## Useful Commands
 
 ```bash
-# Ver status
+# Check status
 launchctl list | grep devguardian
 
-# Ver logs em tempo real
+# View logs in real time
 tail -f ~/.devguardian/monitor_stdout.log
 
-# Parar o monitor
+# Stop the monitor
 launchctl unload ~/Library/LaunchAgents/com.devguardian.monitor.plist
 
-# Reiniciar o monitor
+# Restart the monitor
 launchctl unload ~/Library/LaunchAgents/com.devguardian.monitor.plist
 launchctl load ~/Library/LaunchAgents/com.devguardian.monitor.plist
 
-# Ver erros detectados
+# View detected errors
 cat ~/.devguardian/detector.log
 ```
 
 ---
 
-## O que o Detector Monitora
+## What the Detector Monitors
 
 ✅ **Log Files**
 - `build.log`
 - `npm-debug.log`
 - `test-results.log`
-- Qualquer arquivo em `.logs/`
+- Any file in `.logs/`
 
 ✅ **Test Results**
 - `test-results.json`
 - Coverage reports
 
-✅ **Patterns** (detecta automaticamente)
+✅ **Patterns** (auto-detected)
 - ERROR, error, failed, FAILED
 - Exception, panic, fatal, crash
 - Module not found, import error
 
 ---
 
-## Quando tem erro (workflow)
+## Error Workflow
 
-1. **Monitor detecta** → Screenshota IDE
-2. **Telegram notifica** → Você vê no celular (mesmo longe)
-3. **Você aprova** → Abre Claude
-4. **Claude resolve** → Edita arquivos necessários
-5. **Executa auto-fixer**:
+1. **Monitor detects** → Takes IDE screenshot
+2. **Telegram notifies** → You see on phone (even away)
+3. **You approve** → Open Claude
+4. **Claude resolves** → Edits necessary files
+5. **Runs auto-fixer**:
    ```bash
-   python3 ~/Projects/DevGuardian/auto_fixer.py /path/to/projeto "descrição do erro"
+   python3 ~/Projects/DevGuardian/auto_fixer.py /path/to/project "error description"
    ```
 6. **Auto-fixer**:
-   - ✅ Instala dependências
-   - ✅ Roda testes
+   - ✅ Installs dependencies
+   - ✅ Runs tests
    - ✅ Build
    - ✅ Git commit + push
 
 ---
 
-## Para Slack (Corporativo)
+## For Slack (Corporate)
 
-Se sua empresa usa Slack:
+If your company uses Slack:
 
-1. Crie app em https://api.slack.com/apps
-2. Ative "Files" e "Message Posting"
-3. Copie **Slack Bot Token** (começa com `xoxb-`)
+1. Create app at https://api.slack.com/apps
+2. Enable "Files" and "Message Posting"
+3. Copy **Slack Bot Token** (starts with `xoxb-`)
 4. Configure `.env`:
    ```
-   SLACK_BOT_TOKEN=xoxb-seu-token
+   SLACK_BOT_TOKEN=xoxb-your-token
    SLACK_CHANNEL=#devguardian
    ```
 
-Monitor vai usar Slack automaticamente se Telegram não tiver.
+Monitor will automatically use Slack if Telegram is not set.
 
 ---
 
-## Estrutura de Arquivos
+## File Structure
 
 ```
 ~/Projects/DevGuardian/
-├── monitor.py           # Loop principal (monitora + notifica)
-├── detector.py          # Detector inteligente (logs, files, testes)
-├── auto_fixer.py        # Claude roda isso (fix + push)
-├── install_launchd.sh   # Instala como background service
-├── setup.sh             # Setup inicial
-├── .env                 # Sua configuração (crie com setup.sh)
-└── README.md            # Este arquivo
+├── monitor.py           # Main loop (monitors + notifies)
+├── detector.py          # Smart detector (logs, files, tests)
+├── auto_fixer.py        # Claude runs this (fix + push)
+├── install_launchd.sh   # Installs as background service
+├── setup.sh             # Initial setup
+├── .env                 # Your configuration (create with setup.sh)
+└── README.md            # This file
 ```
 
 ---
 
 ## Troubleshooting
 
-### "Monitor não está detectando erro"
-Verifica logs:
+### "Monitor is not detecting error"
+Check logs:
 ```bash
 cat ~/.devguardian/detector.log
 ```
 
-Testa manualmente:
+Test manually:
 ```bash
 python3 detector.py
 ```
 
-### "Telegram não envia notificação"
-Verifica token:
+### "Telegram is not sending notification"
+Check token:
 ```bash
-curl https://api.telegram.org/bot[SEU_TOKEN]/getMe
+curl https://api.telegram.org/bot[YOUR_TOKEN]/getMe
 ```
 
-### "Launchd não inicia"
-Verifica plist:
+### "Launchd is not starting"
+Check plist:
 ```bash
 cat ~/Library/LaunchAgents/com.devguardian.monitor.plist
 ```
 
-Carrega manualmente:
+Load manually:
 ```bash
 launchctl load ~/Library/LaunchAgents/com.devguardian.monitor.plist
 ```
 
 ---
 
-## Próximas Versões
+## Future Versions
 
-- [ ] Dashboard web para histórico
-- [ ] Múltiplos projetos
-- [ ] Integração com GitHub Issues
-- [ ] Notificação por email
-- [ ] Slack File Upload com screenshot
+- [ ] Web dashboard for history
+- [ ] Multiple projects
+- [ ] GitHub Issues integration
+- [ ] Email notification
+- [ ] Slack File Upload with screenshot
 
 ---
 
-**Feito com ❤️ para makers que não estão em casa**
+**Made with ❤️ for makers who are not at home**

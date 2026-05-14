@@ -162,9 +162,9 @@ tail -f ~/.devguardian/daemon_stderr.log
 
 `.env` deve ter:
 ```
-TELEGRAM_BOT_TOKEN=your_token_here
+TELEGRAM_BOT_TOKEN=your_telegram_token_here
 TELEGRAM_CHAT_ID=your_chat_id_here
-ANTHROPIC_API_KEY=YOUR_KEY_HERE
+ANTHROPIC_API_KEY=your_api_key_here
 ```
 
 ## 📱 Projetos Configurados
