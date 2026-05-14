@@ -131,6 +131,7 @@ def check_builds():
 
         if returncode != 0:
             error_msg = extract_error(stdout, stderr)
+            full_log = stdout + stderr
 
             # Só notifica se erro é diferente do anterior
             old_state = state["projects"].get(proj_name, {})
@@ -139,6 +140,7 @@ def check_builds():
             state["projects"][proj_name] = {
                 "status": "failed",
                 "error": error_msg,
+                "full_log": full_log,
                 "config": proj_config
             }
 
@@ -205,6 +207,8 @@ def fix_project(proj_name: str) -> bool:
                 error_file = file_path
 
         client = state["anthropic_client"]
+        full_log = proj_state.get('full_log', '')
+
         response = client.messages.create(
             model="claude-opus-4-7",
             max_tokens=4000,
@@ -216,8 +220,10 @@ def fix_project(proj_name: str) -> bool:
 === CODEBASE GUIDE ===
 {codebase_guide}
 
-=== ERROR TO FIX ===
-{proj_state.get('error', '')[:800]}
+=== COMPLETE BUILD LOG ===
+```
+{full_log[-3000:]}
+```
 
 === FILE WITH ERROR ===
 {error_file}
@@ -228,11 +234,13 @@ def fix_project(proj_name: str) -> bool:
 ```
 
 === YOUR TASK ===
-1. Find the EXACT line causing the error
-2. Change ONLY that line (or minimal surrounding code)
-3. Do NOT add anything new
-4. Do NOT remove anything that works
-5. Return COMPLETE file with ONLY error fixed
+1. Read the BUILD LOG carefully
+2. Find the EXACT line number and error
+3. Look at the file and find that line
+4. Change ONLY that line (MINIMAL fix)
+5. Do NOT add anything new
+6. Do NOT remove anything that works
+7. Return COMPLETE file with ONLY error fixed
 
 === RETURN FORMAT (STRICT) ===
 FILE: {error_file}
