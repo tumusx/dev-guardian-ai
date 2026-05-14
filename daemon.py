@@ -144,14 +144,7 @@ def check_builds():
 
             # Se erro é novo/diferente, notifica
             if error_msg != old_error:
-                msg = f"""
-🚨 BUILD FAILED: {proj_name}
-
-{error_msg[:300]}
-
-Responda: fix {proj_name}
-Para corrigir via Claude
-"""
+                msg = f"🚨 BUILD FAILED: {proj_name}\n\n{error_msg[:300]}\n\nfix"
                 logger.error(f"{proj_name} build failed - novo erro, enviando Telegram...")
                 success = send_telegram(msg)
                 if success:
@@ -177,7 +170,7 @@ def fix_project(proj_name: str) -> bool:
         return False
 
     logger.info(f"🤖 Fixing {proj_name}...")
-    send_telegram(f"⏳ {proj_name}: Corrigindo... (analisando)")
+    send_telegram(f"⏳ Corrigindo {proj_name}...")
 
     try:
         project_path = Path(proj_config["path"])
@@ -250,11 +243,7 @@ FILE: {error_file}
         )
 
         fixes_text = response.content[0].text
-
-        send_telegram(f"⏳ {proj_name}: Corrigindo... (aplicando mudanças)")
         apply_fixes(fixes_text, project_path)
-
-        send_telegram(f"⏳ {proj_name}: Corrigindo... (testando build)")
         returncode, stdout, stderr = run_build(proj_config)
 
         if returncode == 0:
@@ -358,9 +347,12 @@ def main():
                 state["last_message_id"] = msg["update_id"]
                 if "message" in msg:
                     text = msg["message"].get("text", "").lower().strip()
-                    if text.startswith("fix "):
-                        proj_name = text.replace("fix ", "").strip()
-                        fix_project(proj_name)
+                    if text == "fix":
+                        # Corrige o projeto que está falhando
+                        for pname, pstate in state["projects"].items():
+                            if pstate.get("status") == "failed":
+                                fix_project(pname)
+                                break
                     elif text == "status":
                         msg_text = "📊 Status:\n"
                         for pname in projects.keys():
