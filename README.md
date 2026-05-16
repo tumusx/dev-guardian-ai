@@ -4,46 +4,70 @@ Background **monitor** for macbook that detects build/IDE errors, notifies you o
 
 Runs 24/7 as a Launchd Agent (native macOS).
 
-## Flow
-
-```
-🔄 Launchd running in background
-    ↓
-IDE with error → Monitors logs/files → Screenshot → Telegram/Slack 
-    ↓ (you approve on your phone)
-Passes screenshot to Claude → Claude resolves
-    ↓
-Auto-fixer runs tests, build, push
-```
-
-## Complete Setup (10 minutes)
-
-### 1️⃣ Initial setup
+## Quick Start (5 minutes)
 
 ```bash
+# 1. Clone and setup
 cd ~/Projects/DevGuardian
-bash setup.sh
+devguardian setup
+
+# 2. Configure credentials in .env
+nano .env
+
+# 3. Start the daemon
+devguardian start
+
+# Done! Monitor is running in background 🎉
 ```
 
-This will:
-- Create virtual environment
-- Install dependencies
-- Create `.env` for you to fill in
+---
 
-### 2️⃣ Configure Telegram Bot
+## Installation
+
+Inside the DevGuardian directory:
+
+```bash
+# Install the CLI command
+pip install -e .
+
+# Now 'devguardian' is available globally
+```
+
+---
+
+## CLI Commands
+
+| Command | What It Does |
+|---|---|
+| `devguardian setup` | Initialize: create venv, install deps, scaffold .env |
+| `devguardian install` | Install daemon as Launchd Agent (auto-start on reboot) |
+| `devguardian start` | Start the daemon |
+| `devguardian stop` | Stop the daemon gracefully |
+| `devguardian stop -f` | Force kill all processes (nuclear option) |
+| `devguardian status` | Show daemon status + last log lines |
+| `devguardian logs` | View daemon logs |
+| `devguardian logs -f` | Stream logs in real-time |
+| `devguardian capture` | Backup logs + config to timestamped folder |
+| `devguardian shutdown` | Capture state then stop daemon |
+
+---
+
+## Configuration
+
+### Step 1: Telegram Bot Token
 
 1. Open Telegram and search for **@BotFather**
 2. Send `/newbot`
 3. Choose a name (e.g., "DevGuardianBot")
 4. Copy the **TOKEN**
 
-### 3️⃣ Get your Chat ID
+### Step 2: Get Your Chat ID
 
 1. Search for **@userinfobot** on Telegram
 2. Send any message
 3. It responds with your **ID**
 
-### 4️⃣ Configure `.env`
+### Step 3: Edit `.env`
 
 ```bash
 nano .env
@@ -55,90 +79,30 @@ TELEGRAM_BOT_TOKEN=your_token_here
 TELEGRAM_CHAT_ID=your_id_here
 PROJECT_PATH=/path/to/your/project
 MONITOR_INTERVAL=30
+ANTHROPIC_API_KEY=your_api_key_here
 ```
 
-### 5️⃣ Install as Launchd Agent (permanent background)
+### Step 4: Start!
 
 ```bash
-bash install_launchd.sh
-```
-
-✅ Monitor is now running in background! It will restart automatically even after reboot.
-
----
-
-## How It Works (Background)
-
-Monitor running continuously:
-- ✅ Checks logs every 30s
-- ✅ Monitors file changes
-- ✅ Checks test results
-- ✅ If error found → Takes screenshot + Telegram
-
-You're away from home:
-- 📱 Get notification on Telegram
-- 🤖 Open Claude, paste screenshot
-- 🔧 Claude resolves the code
-- 📤 Runs auto-fixer → automatic push
-
----
-
-## Useful Commands
-
-```bash
-# Check status
-launchctl list | grep devguardian
-
-# View logs in real time
-tail -f ~/.devguardian/monitor_stdout.log
-
-# Stop the monitor
-launchctl unload ~/Library/LaunchAgents/com.devguardian.monitor.plist
-
-# Restart the monitor
-launchctl unload ~/Library/LaunchAgents/com.devguardian.monitor.plist
-launchctl load ~/Library/LaunchAgents/com.devguardian.monitor.plist
-
-# View detected errors
-cat ~/.devguardian/detector.log
+devguardian start
 ```
 
 ---
 
-## What the Detector Monitors
+## How It Works
 
-✅ **Log Files**
-- `build.log`
-- `npm-debug.log`
-- `test-results.log`
-- Any file in `.logs/`
-
-✅ **Test Results**
-- `test-results.json`
-- Coverage reports
-
-✅ **Patterns** (auto-detected)
-- ERROR, error, failed, FAILED
-- Exception, panic, fatal, crash
-- Module not found, import error
-
----
-
-## Error Workflow
-
-1. **Monitor detects** → Takes IDE screenshot
-2. **Telegram notifies** → You see on phone (even away)
-3. **You approve** → Open Claude
-4. **Claude resolves** → Edits necessary files
-5. **Runs auto-fixer**:
-   ```bash
-   python3 ~/Projects/DevGuardian/auto_fixer.py /path/to/project "error description"
-   ```
-6. **Auto-fixer**:
-   - ✅ Installs dependencies
-   - ✅ Runs tests
-   - ✅ Build
-   - ✅ Git commit + push
+```
+🔄 Daemon running in background (Launchd)
+    ↓
+Checks project builds every N seconds
+    ↓
+Error detected? → Send Telegram notification
+    ↓
+You approve via Telegram → Claude fixes code
+    ↓
+Auto-fixer runs tests, build, push
+```
 
 ---
 
@@ -149,71 +113,100 @@ If your company uses Slack:
 1. Create app at https://api.slack.com/apps
 2. Enable "Files" and "Message Posting"
 3. Copy **Slack Bot Token** (starts with `xoxb-`)
-4. Configure `.env`:
+4. Add to `.env`:
    ```
    SLACK_BOT_TOKEN=xoxb-your-token
    SLACK_CHANNEL=#devguardian
    ```
 
-Monitor will automatically use Slack if Telegram is not set.
+Daemon will use Slack if Telegram is not configured.
 
 ---
 
-## File Structure
+## Project Structure
 
 ```
 ~/Projects/DevGuardian/
-├── monitor.py           # Main loop (monitors + notifies)
-├── detector.py          # Smart detector (logs, files, tests)
-├── auto_fixer.py        # Claude runs this (fix + push)
-├── install_launchd.sh   # Installs as background service
-├── setup.sh             # Initial setup
-├── .env                 # Your configuration (create with setup.sh)
+├── cli.py               # CLI commands (start, stop, status, logs, capture)
+├── daemon.py            # Main daemon loop (monitors builds, handles fixes)
+├── detector.py          # Error detection (logs, tests, git status)
+├── auto_fixer.py        # Auto-fix runner (deps, tests, build, push)
+├── setup.sh             # Legacy setup (can also use 'devguardian setup')
+├── install_daemon.sh    # Legacy installer (can also use 'devguardian install')
+├── projects_config.json # Project registry
+├── .env                 # Your credentials (local only, not in git)
+├── .gitignore           # Protects .env and secrets
 └── README.md            # This file
 ```
 
 ---
 
+## Monitoring Details
+
+The daemon monitors:
+
+✅ **Build Commands**
+- Configured `build_cmd` per project (e.g., `./gradlew build`)
+- Error detection via stdout/stderr patterns
+
+✅ **Log Files**
+- `build.log`, `npm-debug.log`, `test-results.log`
+- Any file in `.logs/` directory
+
+✅ **Test Results**
+- `test-results.json` (numFailedTests)
+- Coverage reports
+
+✅ **Patterns** (auto-detected)
+- ERROR, error, failed, FAILED
+- Exception, panic, fatal, crash
+- Module not found, import error
+
+---
+
 ## Troubleshooting
 
-### "Monitor is not detecting error"
-Check logs:
+### Daemon won't start
 ```bash
-cat ~/.devguardian/detector.log
+# Check status
+devguardian status
+
+# View recent logs
+devguardian logs -f
+
+# Reinstall
+devguardian install
 ```
 
-Test manually:
+### Not getting Telegram notifications
+1. Check your token:
+   ```bash
+   curl https://api.telegram.org/bot[YOUR_TOKEN]/getMe
+   ```
+2. Verify `.env` has correct token and chat ID
+3. Check daemon logs: `devguardian logs`
+
+### Want to see backups
 ```bash
+ls -la ~/.devguardian/backups/
+```
+
+### Want to debug manually
+```bash
+python3 daemon.py
 python3 detector.py
 ```
 
-### "Telegram is not sending notification"
-Check token:
-```bash
-curl https://api.telegram.org/bot[YOUR_TOKEN]/getMe
-```
-
-### "Launchd is not starting"
-Check plist:
-```bash
-cat ~/Library/LaunchAgents/com.devguardian.monitor.plist
-```
-
-Load manually:
-```bash
-launchctl load ~/Library/LaunchAgents/com.devguardian.monitor.plist
-```
-
 ---
 
-## Future Versions
+## Future Plans
 
 - [ ] Web dashboard for history
-- [ ] Multiple projects
+- [ ] Multiple project support
 - [ ] GitHub Issues integration
-- [ ] Email notification
-- [ ] Slack File Upload with screenshot
+- [ ] Email notifications
+- [ ] Slack file uploads
 
 ---
 
-**Made with ❤️ for makers who are not at home**
+**Made with ❤️ for makers who aren't glued to their desk**
